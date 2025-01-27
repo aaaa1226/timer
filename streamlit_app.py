@@ -1,100 +1,64 @@
 import streamlit as st
-import pandas as pd
-import datetime
-import openai
 import time
+from datetime import datetime, timedelta
+from math import pi, cos, sin
+import openai
 
-# Set your OpenAI API key
+# OpenAI API key
 openai.api_key = st.secrets["APIKEY"]
 
-# Initialize session state for reminders
-if 'reminders' not in st.session_state:
-    st.session_state.reminders = []
+# タイトル
+st.title("勉強時間計測アプリ")
 
-# Function to calculate daily completion percentage and generate advice
-def generate_advice(title, due_date):
-    days_left = (due_date - datetime.datetime.now()).days
-    if days_left > 0:
-        daily_percentage = 100 / days_left
-        prompt = (f"The reminder '{title}' is due in {days_left} days."
-                  f" Suggest strategies to complete it by finishing {daily_percentage:.2f}% daily.")
-        try:
-            response = openai.Completion.create(
-                engine="text-davinci-003",
-                prompt=prompt,
-                max_tokens=100
-            )
-            return response.choices[0].text.strip()
-        except Exception as e:
-            return f"Error generating advice: {str(e)}"
-    else:
-        return "The deadline has already passed. Try to prioritize overdue tasks!"
+# モード選択
+mode = st.radio("モードを選択してください", ["ストップウォッチ", "タイマー"])
 
-# Sidebar for adding a new reminder
-st.sidebar.header("Add a New Reminder")
-category = st.sidebar.text_input("Category")
-title = st.sidebar.text_input("Title")
-details = st.sidebar.text_area("Details")
-due_date = st.sidebar.date_input("Due Date", min_value=datetime.date.today())
-due_time = st.sidebar.time_input("Due Time")
-completion_level = st.sidebar.slider("Completion Level (%)", 0, 100, 0)
+# 勉強科目と分野の入力
+topic = st.text_input("教科を入力してください")
+field = st.text_input("分野を入力してください")
 
-if st.sidebar.button("Add Reminder"):
-    #check if reminder already exisis
-    existing_titles = [reminder['Title'] for reminder in st.session_state.reminders]
-if title in existing_titles:
-    st.sidebar.error("A reminder with this title already exists. Please use a different title.")
-else:
-    reminder = {
-        'Category': category,
-        'Title': title,
-        'Details': details,
-        'Due Date': datetime.datetime.combine(due_date, due_time),
-        'Completion': completion_level,
-        'Advice': generate_advice(title, datetime.datetime.combine(due_date, due_time))
-    }
-    st.session_state.reminders.append(reminder)
-    st.sidebar.success("Reminder added successfully!")
+# 目標勉強時間の設定
+goal_time = st.number_input("1日の目標勉強時間 (時間)", min_value=0, max_value=24, step=1, value=0)
+st.write(f"今日の目標: {goal_time} 時間")
 
-# Main app
-st.title("Reminder Web Application")
+# 時間記録
+data = st.session_state.get("data", [])
+if "data" not in st.session_state:
+    st.session_state["data"] = []
 
-# Group reminders by category
-categories = list(set([reminder['Category'] for reminder in st.session_state.reminders]))
-selected_category = st.selectbox("Filter by Category", options=["All"] + categories)
+def format_time(seconds):
+    """Convert seconds to hh:mm:ss."""
+    return str(timedelta(seconds=int(seconds)))
 
-filtered_reminders = (
-    st.session_state.reminders if selected_category == "All" 
-    else [r for r in st.session_state.reminders if r['Category'] == selected_category]
-)
+if mode == "ストップウォッチ":
+    if st.button("スタート"):
+        start_time = time.time()
+        while True:
+            elapsed = time.time() - start_time
+            st.metric("経過時間", format_time(elapsed))
+            time.sleep(1)
+            if st.button("ストップ"):
+                st.session_state["data"].append((topic, field, elapsed))
+                break
 
-if filtered_reminders:
-    for reminder in filtered_reminders:
-        st.subheader(f"{reminder['Category']} - {reminder['Title']}")
-        st.write(f"**Details:** {reminder['Details']}")
-        st.write(f"**Due Date:** {reminder['Due Date']}")
-        st.write(f"**Completion Level:** {reminder['Completion']}%")
-        st.write(f"**Advice:** {reminder['Advice']}")
+elif mode == "タイマー":
+    hours = st.number_input("時間", min_value=0, max_value=40, step=1)
+    minutes = st.number_input("分", min_value=0, max_value=59, step=1)
+    seconds = st.number_input("秒", min_value=0, max_value=59, step=1)
+    total_seconds = int(hours * 3600 + minutes * 60 + seconds)
 
-        # Update completion level
-        new_completion = st.slider(
-            f"Update Completion Level for '{reminder['Title']}'", 
-            0, 100, reminder['Completion'], key=reminder['Title']
-        )
-        reminder['Completion'] = new_completion
+    if st.button("スタート"):
+        end_time = datetime.now() + timedelta(seconds=total_seconds)
+        while True:
+            remaining = (end_time - datetime.now()).total_seconds()
+            if remaining <= 0:
+                st.write("タイマー終了！")
+                break
+            st.metric("残り時間", format_time(remaining))
+            time.sleep(1)
 
-        # Check if the due date is near
-        days_left = (reminder['Due Date'] - datetime.datetime.now()).days
-        if 0 < days_left <= 3:
-            st.warning(f"Reminder '{reminder['Title']}' is due in {days_left} days!")
-        #Mark reminder as complete
-        if reminder['Completion'] == 100:
-            st.success(f"Reminder '{reminder['Title']}' complete!! Good job!")
-            time.sleep(10) # Wait for 10 seconds
-            st.session_state.reminders.remove(reminder)
-        #Delete reminder buton
-        if st.buton(f"Delete '{reminder['Title']}", key=f"delete_{reminder['Title']}"):
-            st.session_state.reminders.remove(reminder)
-            st.success(f"Reminder '{reminder['Title']}' deleted.")
-else:
-    st.info("No reminders found in this category.")
+# データを表示
+if st.button("記録を表示"):
+    st.write("勉強記録:")
+    for record in st.session_state["data"]:
+        st.write(f"教科: {record[0]}, 分野: {record[1]}, 時間: {format_time(record[2])}")

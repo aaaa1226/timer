@@ -1,31 +1,64 @@
-# Streamlitライブラリをインポート
 import streamlit as st
+import time
+from datetime import datetime, timedelta
+from math import pi, cos, sin
+import openai
 
-# ページ設定（タブに表示されるタイトル、表示幅）
-st.set_page_config(page_title="タイトル", layout="wide")
+# OpenAI API key
+openai.api_key = st.secrets["APIKEY"]
 
-# タイトルを設定
-st.title('Streamlitのサンプルアプリ')
+# タイトル
+st.title("勉強時間計測アプリ")
 
-# テキスト入力ボックスを作成し、ユーザーからの入力を受け取る
-user_input = st.text_input('あなたの名前を入力してください')
+# モード選択
+mode = st.radio("モードを選択してください", ["ストップウォッチ", "タイマー"])
 
-# ボタンを作成し、クリックされたらメッセージを表示
-if st.button('挨拶する'):
-    if user_input:  # 名前が入力されているかチェック
-        st.success(f'🌟 こんにちは、{user_input}さん! 🌟')  # メッセージをハイライト
-    else:
-        st.error('名前を入力してください。')  # エラーメッセージを表示
+# 勉強科目と分野の入力
+topic = st.text_input("教科を入力してください")
+field = st.text_input("分野を入力してください")
 
-# スライダーを作成し、値を選択
-number = st.slider('好きな数字（10進数）を選んでください', 0, 100)
+# 目標勉強時間の設定
+goal_time = st.number_input("1日の目標勉強時間 (時間)", min_value=0, max_value=24, step=1, value=0)
+st.write(f"今日の目標: {goal_time} 時間")
 
-# 補足メッセージ
-st.caption("十字キー（左右）でも調整できます。")
+# 時間記録
+data = st.session_state.get("data", [])
+if "data" not in st.session_state:
+    st.session_state["data"] = []
 
-# 選択した数字を表示
-st.write(f'あなたが選んだ数字は「{number}」です。')
+def format_time(seconds):
+    """Convert seconds to hh:mm:ss."""
+    return str(timedelta(seconds=int(seconds)))
 
-# 選択した数値を2進数に変換
-binary_representation = bin(number)[2:]  # 'bin'関数で2進数に変換し、先頭の'0b'を取り除く
-st.info(f'🔢 10進数の「{number}」を2進数で表現すると「{binary_representation}」になります。 🔢')  # 2進数の表示をハイライト
+if mode == "ストップウォッチ":
+    if st.button("スタート"):
+        start_time = time.time()
+        while True:
+            elapsed = time.time() - start_time
+            st.metric("経過時間", format_time(elapsed))
+            time.sleep(1)
+            if st.button("ストップ"):
+                st.session_state["data"].append((topic, field, elapsed))
+                break
+
+elif mode == "タイマー":
+    hours = st.number_input("時間", min_value=0, max_value=40, step=1)
+    minutes = st.number_input("分", min_value=0, max_value=59, step=1)
+    seconds = st.number_input("秒", min_value=0, max_value=59, step=1)
+    total_seconds = int(hours * 3600 + minutes * 60 + seconds)
+
+    if st.button("スタート"):
+        end_time = datetime.now() + timedelta(seconds=total_seconds)
+        while True:
+            remaining = (end_time - datetime.now()).total_seconds()
+            if remaining <= 0:
+                st.write("タイマー終了！")
+                break
+            st.metric("残り時間", format_time(remaining))
+            time.sleep(1)
+
+# データを表示
+if st.button("記録を表示"):
+    st.write("勉強記録:")
+    for record in st.session_state["data"]:
+        st.write(f"教科: {record[0]}, 分野: {record[1]}, 時間: {format_time(record[2])}")
